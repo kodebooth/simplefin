@@ -100,6 +100,8 @@ impl FromStr for Account {
 ///
 /// Error codes follow the format `prefix.subcode`, where the prefix indicates
 /// the error category (gen, con, act) and the optional subcode provides specificity.
+///
+/// See [`Error`] for usage examples.
 #[derive(PartialEq, Debug)]
 pub enum Code {
     /// General error affecting the entire API.
@@ -182,6 +184,13 @@ impl Serialize for Code {
 }
 
 /// Represents an error returned by the SimpleFin API.
+///
+/// Errors follow a hierarchical code structure with prefixes indicating the category:
+/// - `gen`: General errors affecting the entire API
+/// - `con`: Connection-specific errors
+/// - `act`: Account-specific errors
+///
+/// See the [crate-level documentation](crate) for usage examples.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Error {
     /// Hierarchical error code indicating the type of error.
@@ -204,24 +213,53 @@ pub struct Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, from_str, json};
+    use rstest::rstest;
 
-    #[test]
-    fn test() {
-        let error = Error {
+    #[rstest]
+    #[case(
+        r#"{
+  "code": "gen.auth",
+  "msg": "No credentials provided"
+}"#,
+        Error {
             code: Code::General(Some(General::Authentication)),
-            message: "test message".to_string(),
-            connection_id: Some(ConnectionId::new("test_connection_id")),
+            message: "No credentials provided".to_string(),
+            connection_id: None,
             account_id: None,
-        };
+        }
+    )]
+    #[case(
+        r#"{
+  "code": "con.auth",
+  "msg": "Authentication failed for My Bank - Jim",
+  "conn_id": "CON-21983498-29349823984293842"
+}"#,
+        Error {
+            code: Code::Connection(Some(Connection::Authentication)),
+            message: "Authentication failed for My Bank - Jim".to_string(),
+            connection_id: Some(ConnectionId::new("CON-21983498-29349823984293842")),
+            account_id: None,
+        }
+    )]
+    #[case(
+        r#"{
+  "code": "act.failed",
+  "msg": "Failed to get all transactions. Try again later.",
+  "account_id": "ACT-1982398-12398192839182398123"
+}"#,
+        Error {
+            code: Code::Account(Some(Account::Failed)),
+            message: "Failed to get all transactions. Try again later.".to_string(),
+            connection_id: None,
+            account_id: Some(AccountId::new("ACT-1982398-12398192839182398123")),
+        }
 
-        assert_eq!(
-            from_str::<Value>(&serde_json::to_string(&error).unwrap()).unwrap(),
-            json!({
-                "code": "gen.auth",
-                "msg": "test message",
-                "conn_id": "test_connection_id",
-            })
-        );
+    )]
+    fn test_examples(#[case] input: &str, #[case] expected: Error) {
+        let deserialized: Error = serde_json::from_str(input).unwrap();
+        assert_eq!(deserialized, expected);
+
+        let serialized = serde_json::to_string_pretty(&deserialized).unwrap();
+        assert_eq!(serialized, input);
     }
 }

@@ -1,7 +1,5 @@
 # SimpleFIN Data Structures
 
-A Rust library providing type-safe data structures for the [SimpleFIN v2 protocol](https://www.simplefin.org/). This crate includes models for accounts, transactions, connections, and error handling, with full serialization/deserialization support via `serde`.
-
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
 [![Build Status][actions-badge]][actions-url]
@@ -9,80 +7,171 @@ A Rust library providing type-safe data structures for the [SimpleFIN v2 protoco
 [crates-badge]: https://img.shields.io/crates/v/simplefin-data
 [crates-url]: https://crates.io/crates/simplefin-data
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
-[mit-url]: https://github.com/kodebooth/simplefin/blob/main/LICENSE
-[actions-badge]: https://github.com/kodebooth/simplefin/workflows/CI/badge.svg
-[actions-url]: https://github.com/kodebooth/simplefin/actions?query=workflow%3ACI+branch%3Amain
+[mit-url]: https://github.com/kodebooth/simplefin-data/blob/main/LICENSE
+[actions-badge]: https://github.com/kodebooth/simplefin-data/workflows/CI/badge.svg
+[actions-url]: https://github.com/kodebooth/simplefin-data/actions?query=workflow%3ACI+branch%3Amain
 
-## Overview
+## SimpleFIN Data Structures
 
-SimpleFIN is a protocol for accessing financial data from banks and other financial institutions. This library provides:
+A Rust library providing type-safe data structures for the [SimpleFIN v2 protocol](https://www.simplefin.org/).
+This crate includes models for accounts, transactions, connections, and error handling,
+with full serialization/deserialization support via `serde`.
+
+### Overview
+
+SimpleFIN is a protocol for accessing financial data from banks and other financial institutions.
+This library provides:
 
 - **Type-safe wrappers** for identifiers (AccountId, ConnectionId, TransactionId, etc.)
-- **Data structures** for accounts, transactions, and connections
-- **Automatic serialization/deserialization** between Rust types and JSON
+- **Data structures** for accounts, transactions, connections, and complete account sets
+- **Automatic serialization/deserialization** between Rust types and JSON, matching SimpleFIN v2 protocol format
 - **Date/time handling** with Unix timestamp conversion
 - **Currency support** for both official codes (USD, EUR) and custom currencies
+- **Error handling** with hierarchical error codes (`gen`, `con`, `act`)
+- **Generic extra fields** support for custom data on accounts and transactions
 
-## Installation
+### Quick Start
 
-Add this to your `Cargo.toml`:
+#### Deserializing a Complete AccountSet
 
-```toml
-[dependencies]
-simplefin-data = "0.1"
-```
-
-## Quick Start
-
-### Creating a Transaction
+The most common use case is deserializing a complete API response containing accounts,
+connections, and any errors:
 
 ```rust
-use simplefin_data::transaction::{Transaction, TransactionId};
-use chrono::DateTime;
-use std::collections::HashMap;
+use simplefin_data::accountset::AccountSet;
 
-let transaction = Transaction {
-    transaction_id: TransactionId::new("txn_12345"),
-    posted: DateTime::from_timestamp_secs(1704067200).unwrap(), // 2024-01-01
-    amount: -42.50, // Negative for debits
-    description: "Coffee Shop Purchase".to_string(),
-    transacted_at: Some(DateTime::from_timestamp_secs(1704067200).unwrap()),
-    pending: Some(false),
-    extra: HashMap::new(),
-};
+let json = r#"{
+  "errlist": [],
+  "connections": [
+    {
+      "conn_id": "CON-1122121298398234234",
+      "name": "My Bank - Jill",
+      "org_id": "INST-1298391823-129381928391823",
+      "org_url": "https://mybank.com/",
+      "sfin_url": "https://sfin.mybank.com/"
+    }
+  ],
+  "accounts": [
+    {
+      "id": "2930002",
+      "name": "Savings",
+      "conn_id": "CON-1122121298398234234",
+      "currency": "USD",
+      "balance": "100.23",
+      "available-balance": "75.23",
+      "balance-date": 978366153,
+      "transactions": [
+        {
+          "id": "12394832938403",
+          "posted": 793090572,
+          "amount": "-33293.43",
+          "description": "Uncle Frank's Bait Shop"
+        }
+      ]
+    }
+  ]
+}"#;
 
-// Serialize to JSON
-let json = serde_json::to_string(&transaction).unwrap();
-println!("{}", json);
+let account_set: AccountSet = serde_json::from_str(json).unwrap();
+println!("Loaded {} accounts", account_set.accounts.len());
+
+// Process accounts
+for account in &account_set.accounts {
+    println!("Account: {}, Balance: {}", &*account.name, account.balance);
+}
+
+// Check for errors
+if !account_set.errlist.is_empty() {
+    for error in &account_set.errlist {
+        eprintln!("Error: {}", error.message);
+    }
+}
 ```
 
-### Creating an Account
+#### Using Generic Extra Fields
+
+Accounts and transactions support custom fields through generic type parameters:
 
 ```rust
 use simplefin_data::account::{Account, AccountId, AccountName, Currency};
 use simplefin_data::connection::ConnectionId;
-use simplefin_data::transaction::Transaction;
 use chrono::DateTime;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
-let account: Account<String> = Account {
+#[derive(Serialize, Deserialize, Debug)]
+struct AccountExtra {
+    #[serde(rename = "account-open-date")]
+    pub account_open_date: i64,
+    pub branch_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TransactionExtra {
+    pub category: String,
+    pub tags: Vec<String>,
+}
+
+// Use the generic types
+let account: Account<AccountExtra, TransactionExtra> = Account {
     account_id: AccountId::new("acc_67890"),
     name: AccountName::new("Checking Account"),
     connection_id: ConnectionId::new("conn_123"),
-    currency: Currency::Official("USD".to_string()),
+    currency: Currency::new("USD"),
     balance: 1234.56,
     available_balance: Some(1234.56),
     balance_date: DateTime::from_timestamp_secs(1704067200).unwrap(),
     transactions: vec![],
-    extra: HashMap::new(),
+    extra: Some(AccountExtra {
+        account_open_date: 1640000000,
+        branch_id: "BR-001".to_string(),
+    }),
 };
-
-// Serialize to JSON
-let json = serde_json::to_string_pretty(&account).unwrap();
-println!("{}", json);
 ```
 
-### Creating a Connection
+#### Creating Individual Types
+
+##### Transaction
+
+```rust
+use simplefin_data::transaction::{Transaction, TransactionId};
+use chrono::DateTime;
+
+let transaction: Transaction = Transaction {
+    transaction_id: TransactionId::new("txn_12345"),
+    posted: DateTime::from_timestamp_secs(1704067200).unwrap(),
+    amount: -42.50, // Negative for debits
+    description: "Coffee Shop Purchase".to_string(),
+    transacted_at: Some(DateTime::from_timestamp_secs(1704067200).unwrap()),
+    pending: Some(false),
+    extra: None,
+};
+
+// Serialize to JSON (amounts are encoded as strings)
+let json = serde_json::to_string_pretty(&transaction).unwrap();
+// Output: {"id":"txn_12345","posted":1704067200,"amount":"-42.5", ...}
+```
+
+##### Account
+
+```rust
+use simplefin_data::account::{Account, AccountId, AccountName, Currency};
+use simplefin_data::connection::ConnectionId;
+use chrono::DateTime;
+
+let account: Account = Account {
+    account_id: AccountId::new("acc_67890"),
+    name: AccountName::new("Checking Account"),
+    connection_id: ConnectionId::new("conn_123"),
+    currency: Currency::new("USD"),
+    balance: 1234.56,
+    available_balance: Some(1234.56),
+    balance_date: DateTime::from_timestamp_secs(1704067200).unwrap(),
+    transactions: vec![],
+    extra: None,
+};
+```
+
+##### Connection
 
 ```rust
 use simplefin_data::connection::{
@@ -97,36 +186,32 @@ let connection = Connection {
     organization_url: Some(OrganizationUrl::new("https://mybank.com").unwrap()),
     simplefin_url: SimplefinUrl::new("https://api.simplefin.org/accounts").unwrap(),
 };
-
-// Serialize to JSON
-let json = serde_json::to_string_pretty(&connection).unwrap();
-println!("{}", json);
 ```
 
-### Deserializing from JSON
+#### Error Handling
+
+SimpleFIN errors follow a hierarchical code structure:
 
 ```rust
-use simplefin_data::account::Account;
+use simplefin_data::error::{Error, Code, Connection as ConnError};
+use simplefin_data::connection::ConnectionId;
 
-let json = r#"{
-    "id": "acc_12345",
-    "name": "Savings Account",
-    "conn_id": "conn_123",
-    "currency": "USD",
-    "balance": 5000.00,
-    "balance-date": 1704067200,
-    "transactions": []
-}"#;
+let error = Error {
+    code: Code::Connection(Some(ConnError::Authentication)),
+    message: "Authentication failed for My Bank - Jim".to_string(),
+    connection_id: Some(ConnectionId::new("CON-21983498-29349823984293842")),
+    account_id: None,
+};
 
-let account: Account<String> = serde_json::from_str(json).unwrap();
-println!("Account: {} has balance: {}", account.name.as_ref(), account.balance);
+// Serializes to:
+// {
+//   "code": "con.auth",
+//   "msg": "Authentication failed for My Bank - Jim",
+//   "conn_id": "CON-21983498-29349823984293842"
+// }
 ```
 
-## Features
-
-- **Type Safety**: Strong typing prevents mixing up different types of IDs
-- **Deref Implementations**: Easy access to underlying string values via `Deref`
-- **Serde Integration**: Seamless JSON serialization/deserialization
-- **Optional Fields**: Proper handling of optional data with `skip_serializing_if`
-- **Custom Currency**: Support for both standard currency codes and custom URL-based currencies
-- **Extensible**: `extra` HashMap fields for custom data
+Error codes include:
+- **General errors**: `gen.api`, `gen.auth`
+- **Connection errors**: `con.auth`
+- **Account errors**: `act.failed`, `act.missingdata`

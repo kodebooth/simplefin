@@ -1,6 +1,7 @@
 //! Transaction-related data structures.
 
-use std::{collections::HashMap, ops::Deref};
+use crate::{deserialize_f32_str, serialize_f32_str};
+use std::ops::Deref;
 
 use crate::{deserialize_date, deserialize_date_option, serialize_date, serialize_date_option};
 use chrono::{DateTime, Utc};
@@ -26,8 +27,12 @@ impl Deref for TransactionId {
 }
 
 /// Represents a financial transaction.
+///
+/// Transactions represent financial activity on an account, with amounts
+/// serialized as strings to maintain precision.
+/// See the [crate-level documentation](crate) for usage examples.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct Transaction<O = String> {
+pub struct Transaction<ExtraT = ()> {
     /// Unique identifier for this transaction.
     #[serde(rename = "id")]
     pub transaction_id: TransactionId,
@@ -38,52 +43,69 @@ pub struct Transaction<O = String> {
     )]
     pub posted: DateTime<Utc>,
     /// Transaction amount (positive for credits, negative for debits).
+    #[serde(
+        serialize_with = "serialize_f32_str",
+        deserialize_with = "deserialize_f32_str"
+    )]
     pub amount: f32,
     /// Human-readable transaction description.
     pub description: String,
     /// Date when the transaction actually occurred (may differ from posted date).
     #[serde(
+        skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_date_option",
-        deserialize_with = "deserialize_date_option"
+        deserialize_with = "deserialize_date_option",
+        default
     )]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub transacted_at: Option<DateTime<Utc>>,
     /// Whether the transaction is still pending (not yet cleared).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending: Option<bool>,
     /// Additional custom fields.
-    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-    pub extra: HashMap<String, O>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra: Option<ExtraT>,
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use serde_json::{Value, from_str, json};
+    use rstest::rstest;
 
-    #[test]
-    fn test() {
-        let transaction: Transaction<String> = Transaction {
-            transaction_id: TransactionId::new("test_transaction_id"),
-            posted: DateTime::from_timestamp_secs(1000).unwrap(),
-            amount: 100.2,
-            description: "test_description".to_string(),
-            transacted_at: Some(DateTime::from_timestamp_secs(1002).unwrap()),
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct Extra {
+        pub category: String,
+    }
+
+    #[rstest]
+    #[case(
+        r#"{
+  "id": "12394832938403",
+  "posted": 793090572,
+  "amount": "-33293.43",
+  "description": "Uncle Frank's Bait Shop",
+  "pending": true,
+  "extra": {
+    "category": "food"
+  }
+}"#,
+        Transaction::<_> {
+            transaction_id: TransactionId::new("12394832938403"),
+            posted: DateTime::from_timestamp_secs(793090572).unwrap(),
+            amount: -33293.43,
+            description: "Uncle Frank's Bait Shop".to_string(),
+            transacted_at: None,
             pending: Some(true),
-            extra: HashMap::new(),
-        };
-
-        assert_eq!(
-            from_str::<Value>(&serde_json::to_string(&transaction).unwrap()).unwrap(),
-            json!({
-                "id": "test_transaction_id",
-                "posted": 1000,
-                "amount": 100.2,
-                "description": "test_description",
-                "transacted_at": 1002,
-                "pending": true,
+            extra: Some(Extra {
+                category: "food".to_string()
             })
-        );
+        }
+    )]
+    fn test_examples(#[case] input: &str, #[case] expected: Transaction<Extra>) {
+        let deserialized: Transaction<_> = serde_json::from_str(input).unwrap();
+        assert_eq!(deserialized, expected);
+
+        let serialized = serde_json::to_string_pretty(&deserialized).unwrap();
+        assert_eq!(serialized, input);
     }
 }

@@ -109,6 +109,8 @@ impl Deref for SimplefinUrl {
 }
 
 /// Represents a SimpleFin connection to a financial institution.
+///
+/// See the [crate-level documentation](crate) for usage examples.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Connection {
     /// Unique identifier for this connection.
@@ -130,27 +132,30 @@ pub struct Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, from_str, json};
+    use rstest::rstest;
 
-    #[test]
-    fn test() {
-        let connection = Connection {
-            connection_id: ConnectionId::new("test_connection_id"),
-            name: ConnectionName::new("test_name"),
-            organization_id: OrganizationId::new("test_organization_id"),
-            organization_url: Some(OrganizationUrl::new("https://example.org").unwrap()),
-            simplefin_url: SimplefinUrl::new("https://sfin.example.org").unwrap(),
-        };
+    #[rstest]
+    #[case(
+    r#"{
+  "conn_id": "CON-923049234-203940293409234",
+  "name": "My Bank - Jill",
+  "org_id": "ORG-8293948-230482398492834",
+  "org_url": "https://mybank.com/",
+  "sfin_url": "https://sfin.mybank.com/"
+}"#,
+    Connection {
+            connection_id: ConnectionId::new("CON-923049234-203940293409234"),
+            name: ConnectionName::new("My Bank - Jill"),
+            organization_id: OrganizationId::new("ORG-8293948-230482398492834"),
+            organization_url: Some(OrganizationUrl::new("https://mybank.com").unwrap()),
+            simplefin_url: SimplefinUrl::new("https://sfin.mybank.com").unwrap(),
+        }
+    )]
+    fn test_examples(#[case] input: &str, #[case] expected: Connection) {
+        let deserialized: Connection = serde_json::from_str(input).unwrap();
+        assert_eq!(deserialized, expected);
 
-        assert_eq!(
-            from_str::<Value>(&serde_json::to_string(&connection).unwrap()).unwrap(),
-            json!({
-                "conn_id": "test_connection_id",
-                "name": "test_name",
-                "org_id": "test_organization_id",
-                "org_url": "https://example.org/",
-                "sfin_url": "https://sfin.example.org/",
-            })
-        );
+        let serialized = serde_json::to_string_pretty(&deserialized).unwrap();
+        assert_eq!(serialized, input);
     }
 }

@@ -6,7 +6,7 @@ license = "MIT"
 name = "simplefin-data"
 readme = "README.md"
 repository = "https://github.com/kodebooth/simplefin-data"
-version = "0.1.1"
+version = "0.2.0"
 
 [dependencies]
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -15,3 +15,4 @@ url = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 serde_json = { version = "1" }
+rstest = { version = "0" }
