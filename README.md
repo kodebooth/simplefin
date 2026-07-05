@@ -29,7 +29,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-simplefin-data = "0.1.0"
+simplefin-data = "0.1"
 ```
 
 ## Quick Start
